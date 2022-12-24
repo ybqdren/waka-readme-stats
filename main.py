@@ -30,6 +30,7 @@ listReg = f"{START_COMMENT}[\\s\\S]+{END_COMMENT}"
 
 waka_key = os.getenv('INPUT_WAKATIME_API_KEY')
 ghtoken = os.getenv('INPUT_GH_TOKEN')
+branchName = os.getenv('INPUT_PUSH_BRANCH_NAME')
 showTimeZone = os.getenv('INPUT_SHOW_TIMEZONE')
 showProjects = os.getenv('INPUT_SHOW_PROJECTS')
 showEditors = os.getenv('INPUT_SHOW_EDITORS')
@@ -46,8 +47,12 @@ locale = os.getenv('INPUT_LOCALE')
 commit_by_me = os.getenv('INPUT_COMMIT_BY_ME')
 ignored_repos_name = str(os.getenv('INPUT_IGNORED_REPOS') or '').replace(' ', '').split(',')
 show_updated_date = os.getenv('INPUT_SHOW_UPDATED_DATE')
+updated_date_format = os.getenv('INPUT_UPDATED_DATE_FORMAT')
 commit_message = os.getenv('INPUT_COMMIT_MESSAGE')
+commit_username = os.getenv('INPUT_COMMIT_USERNAME')
+commit_email = os.getenv('INPUT_COMMIT_EMAIL')
 show_total_code_time = os.getenv('INPUT_SHOW_TOTAL_CODE_TIME')
+symbol_version = os.getenv('INPUT_SYMBOL_VERSION').strip()
 show_waka_stats = 'y'
 # The GraphQL query to get commit data.
 userInfoQuery = """
@@ -173,8 +178,19 @@ def run_query(query):
 
 def make_graph(percent: float):
     '''Make progress graph from API graph'''
-    done_block = '█'
-    empty_block = '░'
+    if (symbol_version == '1'):  # version 1
+        done_block = '█'
+        empty_block = '░'
+    elif (symbol_version == '2'):  # version 2
+        done_block = '⣿'
+        empty_block = '⣀'
+    elif (symbol_version == '3'):  # version 3
+        done_block = '⬛'
+        empty_block = '⬜'
+    else:
+        done_block = '█'  # default is version 1
+        empty_block = '░'
+
     pc_rnd = round(percent)
     return f"{done_block * int(pc_rnd / 4)}{empty_block * int(25 - int(pc_rnd / 4))}"
 
@@ -312,59 +328,55 @@ def get_waka_time_stats():
         f"https://wakatime.com/api/v1/users/current/stats/last_7_days?api_key={waka_key}")
     no_activity = translate["No Activity Tracked This Week"]
 
-    if request.status_code == 401:
+    if request.status_code == 401 or request.status_code != 200:
         print("Error With WAKA time API returned " + str(request.status_code) + " Response " + str(request.json()))
     else:
-        empty = True
         data = request.json()
         if showCommit.lower() in truthy:
-            empty = False
             stats = stats + generate_commit_list(tz=data['data']['timezone']) + '\n\n'
 
-        stats += '📊 **' + translate['This Week I Spend My Time On'] + '** \n\n'
-        stats += '```text\n'
-        if showTimeZone.lower() in truthy:
-            empty = False
-            tzone = data['data']['timezone']
-            stats = stats + '⌚︎ ' + translate['Timezone'] + ': ' + tzone + '\n\n'
+        if showTimeZone.lower() in truthy or showLanguage.lower() in truthy or showEditors.lower() in truthy or \
+                showProjects.lower() in truthy or showOs.lower() in truthy:
+            stats += '📊 **' + translate['This Week I Spend My Time On'] + '** \n\n'
+            stats += '```text\n'
 
-        if showLanguage.lower() in truthy:
-            empty = False
-            if len(data['data']['languages']) == 0:
-                lang_list = no_activity
-            else:
-                lang_list = make_list(data['data']['languages'])
-            stats = stats + '💬 ' + translate['Languages'] + ': \n' + lang_list + '\n\n'
+            if showTimeZone.lower() in truthy:
+                tzone = data['data']['timezone']
+                stats = stats + '⌚︎ ' + translate['Timezone'] + ': ' + tzone + '\n\n'
 
-        if showEditors.lower() in truthy:
-            empty = False
-            if len(data['data']['editors']) == 0:
-                edit_list = no_activity
-            else:
-                edit_list = make_list(data['data']['editors'])
-            stats = stats + '🔥 ' + translate['Editors'] + ': \n' + edit_list + '\n\n'
+            if showLanguage.lower() in truthy:
+                if len(data['data']['languages']) == 0:
+                    lang_list = no_activity
+                else:
+                    lang_list = make_list(data['data']['languages'])
+                stats = stats + '💬 ' + translate['Languages'] + ': \n' + lang_list + '\n\n'
 
-        if showProjects.lower() in truthy:
-            empty = False
-            if len(data['data']['projects']) == 0:
-                project_list = no_activity
-            else:
-                # Re-order the project list by percentage
-                data['data']['projects'] = sorted(data['data']['projects'], key=lambda x: x["percent"], reverse=True)
-                project_list = make_list(data['data']['projects'])
-            stats = stats + '🐱‍💻 ' + translate['Projects'] + ': \n' + project_list + '\n\n'
+            if showEditors.lower() in truthy:
+                if len(data['data']['editors']) == 0:
+                    edit_list = no_activity
+                else:
+                    edit_list = make_list(data['data']['editors'])
+                stats = stats + '🔥 ' + translate['Editors'] + ': \n' + edit_list + '\n\n'
 
-        if showOs.lower() in truthy:
-            empty = False
-            if len(data['data']['operating_systems']) == 0:
-                os_list = no_activity
-            else:
-                os_list = make_list(data['data']['operating_systems'])
-            stats = stats + '💻 ' + translate['operating system'] + ': \n' + os_list + '\n\n'
+            if showProjects.lower() in truthy:
+                if len(data['data']['projects']) == 0:
+                    project_list = no_activity
+                else:
+                    # Re-order the project list by percentage
+                    data['data']['projects'] = sorted(data['data']['projects'], key=lambda x: x["percent"],
+                                                      reverse=True)
+                    project_list = make_list(data['data']['projects'])
+                stats = stats + '🐱‍💻 ' + translate['Projects'] + ': \n' + project_list + '\n\n'
 
-        stats += '```\n\n'
-        if empty:
-            return ""
+            if showOs.lower() in truthy:
+                if len(data['data']['operating_systems']) == 0:
+                    os_list = no_activity
+                else:
+                    os_list = make_list(data['data']['operating_systems'])
+                stats = stats + '💻 ' + translate['operating system'] + ': \n' + os_list + '\n\n'
+
+            stats += '```\n\n'
+
     return stats
 
 
@@ -463,7 +475,7 @@ def get_stats(github):
     stats = ''
     repositoryList = run_query(repositoryListQuery.substitute(username=username, id=id))
 
-    if (show_loc.lower() or showLocChart.lower()) in truthy:
+    if show_loc.lower() in truthy or showLocChart.lower() in truthy:
         # This condition is written to calculate the lines of code because it is heavy process soo needs to be calculate once this will reduce the execution time
         yearly_data = get_yearly_data()
 
@@ -505,9 +517,9 @@ def get_stats(github):
         stats = stats + '![Chart not found](https://raw.githubusercontent.com/' + username + '/' + username + '/' + branch_name + '/charts/bar_graph.png) \n\n'
 
     if show_updated_date.lower() in truthy:
-        today = date.today()
-        d1 = today.strftime("%d/%m/%Y")
-        stats = stats + "\n Last Updated on " + d1
+        now = datetime.datetime.utcnow()
+        d1 = now.strftime(updated_date_format)
+        stats = stats + "\n Last Updated on " + d1 + " UTC"
 
     return stats
 
@@ -536,10 +548,11 @@ if __name__ == '__main__':
         g = Github(ghtoken)
         headers = {"Authorization": "Bearer " + ghtoken}
         user_data = run_query(userInfoQuery)  # Execute the query
+        if "errors" in user_data:
+            raise Exception(user_data)
         username = user_data["data"]["viewer"]["login"]
         id = user_data["data"]["viewer"]["id"]
-        emails_user = run_v3_api("/user/emails")  # Execute the api
-        email = emails_user[0]['email']
+        email = user_data["data"]["viewer"]["email"]
         print("Username " + username)
         repo = g.get_repo(f"{username}/{username}")
         contents = repo.get_readme()
@@ -555,13 +568,16 @@ if __name__ == '__main__':
         rdmd = decode_readme(contents.content)
         new_readme = generate_new_readme(stats=waka_stats, readme=rdmd)
         if commit_by_me.lower() in truthy:
-            committer = InputGitAuthor(username, email)
+            committer = InputGitAuthor(username or commit_username, email or commit_email)
         else:
-            committer = InputGitAuthor('readme-bot', '41898282+github-actions[bot]@users.noreply.github.com')
+            committer = InputGitAuthor(
+                commit_username or 'readme-bot',
+                commit_email or '41898282+github-actions[bot]@users.noreply.github.com'
+            )
         if new_readme != rdmd:
             try:
                 repo.update_file(path=contents.path, message=commit_message,
-                                 content=new_readme, sha=contents.sha, branch='master',
+                                 content=new_readme, sha=contents.sha, branch=branchName,
                                  committer=committer)
             except:
                 repo.update_file(path=contents.path, message=commit_message,
